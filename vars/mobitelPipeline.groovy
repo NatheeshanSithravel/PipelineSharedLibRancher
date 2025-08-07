@@ -17,43 +17,46 @@
 
 def call(Map config) {
     pipeline {
+        agent none
+
         environment {
-            // Core configuration
-            ENV = config.environment ?: 'stg'
-            PROJECT = config.project ?: 'mobitel_pipeline'
-            APP_NAME = config.appName
-            CIR = "${ENV}-docker-reg.mobitel.lk"
             CIR_USER = 'mobitel'
             CIR_PW = credentials('cir-pw')
-            KUB_NAMESPACE = config.namespace ?: 'intsys'
-            IMAGE_TAG = "${CIR}/${PROJECT}/${APP_NAME}:${ENV}.${env.BUILD_NUMBER}"
-            EXPOSE_PORT = config.exposePort ?: getDefaultPort(config.appType)
-            HARBOUR_SECRET = config.harbourSecret ?: 'harbor-intsys'
-            
-            // Application type specific settings
-            APP_TYPE = config.appType
-            MAVEN_IMAGE = config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21'
-            CICD_TOOLS_IMAGE = config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest'
-            TRIVY_IMAGE = config.trivyImage ?: 'aquasec/trivy:latest'
-            
-            // Optional SonarQube settings
-            SONAR_ENABLED = config.sonarEnabled ?: false
-            SONAR_PROJECT_KEY = config.sonarProjectKey ?: "${APP_NAME}"
-            SONAR_PROJECT_NAME = config.sonarProjectName ?: "${APP_NAME}"
-            
-            // Email configuration
-            SUCCESS_EMAIL = config.successEmail ?: 'mobiteldev@mobitel.lk'
-            FAILURE_EMAIL = config.failureEmail ?: 'jenkins.notification@mobitel.lk'
-            FAILURE_CC = config.failureCC ?: 'mobiteldev@mobitel.lk'
-            
-            // Resource limits
-            MEMORY_LIMIT = config.memoryLimit ?: '512Mi'
-            CPU_LIMIT = config.cpuLimit ?: null
         }
-        
-        agent none
-        
+
         stages {
+            stage('Initialize') {
+                agent any
+                steps {
+                    script {
+                        env.ENV = config.environment ?: 'stg'
+                        env.PROJECT = config.project ?: 'mobitel_pipeline'
+                        env.APP_NAME = config.appName
+                        env.CIR = "${env.ENV}-docker-reg.mobitel.lk"
+                        env.KUB_NAMESPACE = config.namespace ?: 'intsys'
+                        env.IMAGE_TAG = "${env.CIR}/${env.PROJECT}/${env.APP_NAME}:${env.ENV}.${env.BUILD_NUMBER}"
+                        env.EXPOSE_PORT = config.exposePort ?: getDefaultPort(config.appType)
+                        env.HARBOUR_SECRET = config.harbourSecret ?: 'harbor-intsys'
+
+                        env.APP_TYPE = config.appType
+                        env.MAVEN_IMAGE = config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21'
+                        env.CICD_TOOLS_IMAGE = config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest'
+                        env.TRIVY_IMAGE = config.trivyImage ?: 'aquasec/trivy:latest'
+
+                        env.SONAR_ENABLED = (config.sonarEnabled ?: false).toString()
+                        env.SONAR_PROJECT_KEY = config.sonarProjectKey ?: "${env.APP_NAME}"
+                        env.SONAR_PROJECT_NAME = config.sonarProjectName ?: "${env.APP_NAME}"
+
+                        env.SUCCESS_EMAIL = config.successEmail ?: 'mobiteldev@mobitel.lk'
+                        env.FAILURE_EMAIL = config.failureEmail ?: 'jenkins.notification@mobitel.lk'
+                        env.FAILURE_CC = config.failureCC ?: 'mobiteldev@mobitel.lk'
+
+                        env.MEMORY_LIMIT = config.memoryLimit ?: '512Mi'
+                        env.CPU_LIMIT = config.cpuLimit ?: ''
+                    }
+                }
+            }
+
             stage('SonarQube Analysis') {
                 when {
                     expression { env.SONAR_ENABLED == 'true' }
@@ -63,7 +66,7 @@ def call(Map config) {
                     runSonarAnalysis()
                 }
             }
-            
+
             stage('Build & Test') {
                 when {
                     expression { needsBuild(env.APP_TYPE) }
@@ -78,14 +81,14 @@ def call(Map config) {
                     buildApplication(env.APP_TYPE)
                 }
             }
-            
+
             stage('Build & Push Docker Image') {
                 agent any
                 steps {
                     buildAndPushDockerImage(env.APP_TYPE)
                 }
             }
-            
+
             stage('Security Scan with Trivy') {
                 agent {
                     docker {
@@ -97,14 +100,14 @@ def call(Map config) {
                     runTrivyScan()
                 }
             }
-            
+
             stage('Cleanup Local Images') {
                 agent any
                 steps {
                     cleanupLocalImages()
                 }
             }
-            
+
             stage('Deploy to Kubernetes') {
                 agent {
                     docker {
@@ -116,14 +119,14 @@ def call(Map config) {
                     deployToKubernetes()
                 }
             }
-            
+
             stage('Extract Git Information') {
                 agent any
                 steps {
                     extractGitInformation()
                 }
             }
-            
+
             stage('Set Deployment Annotations') {
                 agent {
                     docker {
@@ -136,7 +139,7 @@ def call(Map config) {
                 }
             }
         }
-        
+
         post {
             success {
                 sendNotificationEmail('success')
