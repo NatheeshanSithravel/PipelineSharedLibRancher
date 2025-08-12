@@ -2,8 +2,6 @@
 
 ## Repository Structure
 
-Create a new Git repository for your shared library with the following structure:
-
 ```
 mobitel-pipeline-lib/
 ├── vars/
