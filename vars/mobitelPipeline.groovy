@@ -247,7 +247,7 @@ def buildApplication(appType) {
 
 def buildAndPushDockerImage(appType) {
     sh '''
-        docker login -u ${CIR_USER} -p ${CIR_PW} ${CIR}
+        docker login -u ${CIR_USER} -p ${CIR_PW} 
     '''
     
     switch(appType) {
