@@ -391,12 +391,12 @@ def sendNotificationEmail(status) {
 Check console output at ${env.BUILD_URL} to view the results."""
     
     if (status == 'success') {
-        mail to: env.SUCCESS_EMAIL,
+        mail to: 'natheeshshaan@gmail.com',
              subject: subject,
              body: body
     } else {
-        mail to: env.FAILURE_EMAIL,
-             cc: env.FAILURE_CC,
+        mail to: 'natheeshshaan@gmail.com',
+             cc: 'natheeshans.ou@mobitel.lk',
              subject: subject,
              body: body
     }
