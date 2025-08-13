@@ -34,8 +34,8 @@ def call(Closure body) {
             PROJECT = "${pipelineEnv.project}"
             APP_NAME = "${pipelineEnv.appName}"
             CIR = "${pipelineEnv.environment}-docker-reg.mobitel.lk"
-            CIR_USER = 'mobitel'
-            CIR_PW = credentials('cir-pw')
+            CIR_USER = 'natheeshshaan@gmail.com'
+            CIR_PW = "Qwerty@123"
             KUB_NAMESPACE = "${pipelineEnv.namespace}"
             IMAGE_TAG = "${pipelineEnv.environment}-docker-reg.mobitel.lk/${pipelineEnv.project}/${pipelineEnv.appName}:${pipelineEnv.environment}.${env.BUILD_NUMBER}"
             EXPOSE_PORT = "${pipelineEnv.exposePort}"
