@@ -5,58 +5,63 @@
  * 
  * Usage:
  * mobitelPipeline {
- *     appType = 'angular-nginx' // or 'react-nginx', 'springboot', 'tomcat-war', 'react-normal'
+ *     appType = 'springboot'
  *     appName = 'my-app'
  *     environment = 'stg'
  *     namespace = 'intsys'
- *     exposePort = '80'
+ *     exposePort = '8080'
  *     harbourSecret = 'harbor-intsys'
- *     // ... other optional parameters
  * }
  */
 
-def call(Map config) {
+def call(Closure body) {
+    // Evaluate the body block, and collect configuration into the object
+    def config = [:]
+    body.resolveStrategy = Closure.DELEGATE_FIRST
+    body.delegate = config
+    body()
+    
+    // Validate required parameters
+    validateConfig(config)
+    
     pipeline {
-        agent none
-
         environment {
+            // Core configuration
+            ENV = config.environment ?: 'stg'
+            PROJECT = config.project ?: 'mobitel_pipeline'
+            APP_NAME = config.appName
+            CIR = "${ENV}-docker-reg.mobitel.lk"
             CIR_USER = 'mobitel'
             CIR_PW = credentials('cir-pw')
+            KUB_NAMESPACE = config.namespace ?: 'intsys'
+            IMAGE_TAG = "${CIR}/${PROJECT}/${APP_NAME}:${ENV}.${env.BUILD_NUMBER}"
+            EXPOSE_PORT = config.exposePort ?: getDefaultPort(config.appType)
+            HARBOUR_SECRET = config.harbourSecret ?: 'harbor-intsys'
+            
+            // Application type specific settings
+            APP_TYPE = config.appType
+            MAVEN_IMAGE = config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21'
+            CICD_TOOLS_IMAGE = config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest'
+            TRIVY_IMAGE = config.trivyImage ?: 'aquasec/trivy:latest'
+            
+            // Optional SonarQube settings
+            SONAR_ENABLED = config.sonarEnabled ?: false
+            SONAR_PROJECT_KEY = config.sonarProjectKey ?: "${config.appName}"
+            SONAR_PROJECT_NAME = config.sonarProjectName ?: "${config.appName}"
+            
+            // Email configuration
+            SUCCESS_EMAIL = config.successEmail ?: 'mobiteldev@mobitel.lk'
+            FAILURE_EMAIL = config.failureEmail ?: 'jenkins.notification@mobitel.lk'
+            FAILURE_CC = config.failureCC ?: 'mobiteldev@mobitel.lk'
+            
+            // Resource limits
+            MEMORY_LIMIT = config.memoryLimit ?: '512Mi'
+            CPU_LIMIT = config.cpuLimit ?: null
         }
-
+        
+        agent none
+        
         stages {
-            stage('Initialize') {
-                agent any
-                steps {
-                    script {
-                        env.ENV = config.environment ?: 'stg'
-                        env.PROJECT = config.project ?: 'mobitel_pipeline'
-                        env.APP_NAME = config.appName
-                        env.CIR = "${env.ENV}-docker-reg.mobitel.lk"
-                        env.KUB_NAMESPACE = config.namespace ?: 'intsys'
-                        env.IMAGE_TAG = "${env.CIR}/${env.PROJECT}/${env.APP_NAME}:${env.ENV}.${env.BUILD_NUMBER}"
-                        env.EXPOSE_PORT = config.exposePort ?: getDefaultPort(config.appType)
-                        env.HARBOUR_SECRET = config.harbourSecret ?: 'harbor-intsys'
-
-                        env.APP_TYPE = config.appType
-                        env.MAVEN_IMAGE = config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21'
-                        env.CICD_TOOLS_IMAGE = config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest'
-                        env.TRIVY_IMAGE = config.trivyImage ?: 'aquasec/trivy:latest'
-
-                        env.SONAR_ENABLED = (config.sonarEnabled ?: false).toString()
-                        env.SONAR_PROJECT_KEY = config.sonarProjectKey ?: "${env.APP_NAME}"
-                        env.SONAR_PROJECT_NAME = config.sonarProjectName ?: "${env.APP_NAME}"
-
-                        env.SUCCESS_EMAIL = config.successEmail ?: 'mobiteldev@mobitel.lk'
-                        env.FAILURE_EMAIL = config.failureEmail ?: 'jenkins.notification@mobitel.lk'
-                        env.FAILURE_CC = config.failureCC ?: 'mobiteldev@mobitel.lk'
-
-                        env.MEMORY_LIMIT = config.memoryLimit ?: '512Mi'
-                        env.CPU_LIMIT = config.cpuLimit ?: ''
-                    }
-                }
-            }
-
             stage('SonarQube Analysis') {
                 when {
                     expression { env.SONAR_ENABLED == 'true' }
@@ -66,7 +71,7 @@ def call(Map config) {
                     runSonarAnalysis()
                 }
             }
-
+            
             stage('Build & Test') {
                 when {
                     expression { needsBuild(env.APP_TYPE) }
@@ -81,14 +86,14 @@ def call(Map config) {
                     buildApplication(env.APP_TYPE)
                 }
             }
-
+            
             stage('Build & Push Docker Image') {
                 agent any
                 steps {
                     buildAndPushDockerImage(env.APP_TYPE)
                 }
             }
-
+            
             stage('Security Scan with Trivy') {
                 agent {
                     docker {
@@ -100,14 +105,14 @@ def call(Map config) {
                     runTrivyScan()
                 }
             }
-
+            
             stage('Cleanup Local Images') {
                 agent any
                 steps {
                     cleanupLocalImages()
                 }
             }
-
+            
             stage('Deploy to Kubernetes') {
                 agent {
                     docker {
@@ -119,14 +124,14 @@ def call(Map config) {
                     deployToKubernetes()
                 }
             }
-
+            
             stage('Extract Git Information') {
                 agent any
                 steps {
                     extractGitInformation()
                 }
             }
-
+            
             stage('Set Deployment Annotations') {
                 agent {
                     docker {
@@ -139,7 +144,7 @@ def call(Map config) {
                 }
             }
         }
-
+        
         post {
             success {
                 sendNotificationEmail('success')
@@ -170,4 +175,200 @@ def getDefaultPort(appType) {
 // Helper function to determine if build stage is needed
 def needsBuild(appType) {
     return appType in ['springboot', 'tomcat-war']
+}
+
+// Utility function to validate required parameters
+def validateConfig(Map config) {
+    def requiredParams = ['appName', 'appType']
+    def missingParams = []
+    
+    requiredParams.each { param ->
+        if (!config[param]) {
+            missingParams.add(param)
+        }
+    }
+    
+    if (missingParams) {
+        error("Missing required parameters: ${missingParams.join(', ')}")
+    }
+    
+    def validAppTypes = ['angular-nginx', 'react-nginx', 'springboot', 'tomcat-war', 'react-normal']
+    if (!(config.appType in validAppTypes)) {
+        error("Invalid appType '${config.appType}'. Valid types: ${validAppTypes.join(', ')}")
+    }
+}
+
+def runSonarAnalysis() {
+    script {
+        def scannerHome = tool 'sonarscanner'
+        withSonarQubeEnv('sonarserver') {
+            sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} -Dsonar.projectName='${env.SONAR_PROJECT_NAME}'"
+        }
+    }
+}
+
+def buildApplication(appType) {
+    switch(appType) {
+        case 'springboot':
+        case 'tomcat-war':
+            sh "mvn -Dmaven.test.skip=true clean install -X"
+            break
+        default:
+            echo "No build step required for ${appType}"
+    }
+}
+
+def buildAndPushDockerImage(appType) {
+    sh '''
+        docker login -u ${CIR_USER} -p ${CIR_PW} ${CIR}
+    '''
+    
+    switch(appType) {
+        case 'springboot':
+            sh '''
+                mkdir -p dockerImage/
+                cp Dockerfile dockerImage/
+                cp target/*.jar dockerImage/
+                docker build --tag=${IMAGE_TAG} dockerImage/.
+                docker push ${IMAGE_TAG}
+            '''
+            break
+        case 'tomcat-war':
+            sh '''
+                mkdir -p dockerImage/
+                cp Dockerfile dockerImage/
+                cp target/*.war dockerImage/
+                docker build --tag=${IMAGE_TAG} dockerImage/.
+                docker push ${IMAGE_TAG}
+            '''
+            break
+        case 'angular-nginx':
+        case 'react-nginx':
+        case 'react-normal':
+        default:
+            sh '''
+                docker build --tag=${IMAGE_TAG} .
+                docker push ${IMAGE_TAG}
+            '''
+            break
+    }
+}
+
+def runTrivyScan() {
+    script {
+        sh "trivy image --no-progress --timeout 15m -f table ${env.IMAGE_TAG}"
+    }
+}
+
+def cleanupLocalImages() {
+    sh '''
+        docker image rm ${IMAGE_TAG}
+        rm -rf dockerImage/
+    '''
+}
+
+def deployToKubernetes() {
+    // Setup kubectl configuration
+    sh '''
+        mkdir -p /root/.kube/
+        cp /root/.cert/${ENV}/config /root/.kube/
+    '''
+    
+    script {
+        // Try to update existing deployment, create new one if it doesn't exist
+        def isDeployed = sh(
+            returnStatus: true,
+            script: 'kubectl -n ${KUB_NAMESPACE} set image deployment/${APP_NAME} ${APP_NAME}=${IMAGE_TAG} --record'
+        )
+        
+        if (isDeployed != 0) {
+            // Create new deployment and service
+            sh '''
+                kubectl -n ${KUB_NAMESPACE} create deployment ${APP_NAME} --image=${IMAGE_TAG}
+                kubectl -n ${KUB_NAMESPACE} expose deployment ${APP_NAME} --name=${APP_NAME} --port=${EXPOSE_PORT}
+            '''
+            
+            // Apply patches for security and resource management
+            applyKubernetesPatches()
+        }
+    }
+}
+
+def applyKubernetesPatches() {
+    // Add image pull secrets
+    sh '''
+        kubectl -n ${KUB_NAMESPACE} patch deployment ${APP_NAME} --patch '{"spec": {"template": {"spec": {"imagePullSecrets": [{"name": "'"${HARBOUR_SECRET}"'"}]}}}}'
+    '''
+    
+    // Set resource limits
+    def resourcePatch = '{"limits": {"memory": "' + env.MEMORY_LIMIT + '"}'
+    if (env.CPU_LIMIT) {
+        resourcePatch += ', "cpu": "' + env.CPU_LIMIT + '"'
+    }
+    resourcePatch += '}'
+    
+    sh """
+        kubectl -n \${KUB_NAMESPACE} patch deployment \${APP_NAME} --type='json' -p='[{"op": "add","path": "/spec/template/spec/containers/0/resources","value": ${resourcePatch}}]'
+    """
+}
+
+def extractGitInformation() {
+    script {
+        // Get Git URL and committer email
+        env.GIT_URL = sh(
+            script: 'git config --get remote.origin.url',
+            returnStdout: true
+        ).trim()
+        echo "GIT URL: ${env.GIT_URL}"
+        
+        env.COMMITTER_EMAIL = sh(
+            script: "git log -1 --pretty=format:'%ce'",
+            returnStdout: true
+        ).trim()
+        echo "Committer Email: ${env.COMMITTER_EMAIL}"
+    }
+}
+
+def setDeploymentAnnotations() {
+    // Setup kubectl configuration
+    sh '''
+        mkdir -p /root/.kube/
+        cp /root/.cert/${ENV}/config /root/.kube/
+    '''
+    
+    script {
+        sh '''
+            #!/bin/bash
+            echo "GIT URL: ${GIT_URL}"
+            echo "JENKINS URL: ${BUILD_URL}"
+            DESCRIPTION="Jenkins URL: ${BUILD_URL}  GIT URL: ${GIT_URL}"
+
+            # Check if the deployment has the field.cattle.io/description annotation
+            CURRENT_DESCRIPTION=$(kubectl -n ${KUB_NAMESPACE} get deployment ${APP_NAME} -o jsonpath='{.metadata.annotations.field\\.cattle\\.io/description}')
+
+            if [ -z "$CURRENT_DESCRIPTION" ]; then
+                echo "No field.cattle.io/description found. Setting the description."
+                kubectl -n ${KUB_NAMESPACE} annotate deployment ${APP_NAME} field.cattle.io/description="${DESCRIPTION}" --overwrite
+            else
+                echo "field.cattle.io/description already exists: $CURRENT_DESCRIPTION"
+            fi
+        '''
+    }
+}
+
+def sendNotificationEmail(status) {
+    def subject = "${env.JOB_NAME} - Build ${env.BUILD_NUMBER} - ${status.capitalize()}!"
+    def body = """${env.JOB_NAME} - Build ${env.BUILD_NUMBER} - ${status.capitalize()}:
+Check console output at ${env.BUILD_URL} to view the results."""
+    
+    if (status == 'success') {
+        mail to: env.SUCCESS_EMAIL,
+             subject: subject,
+             body: body
+    } else {
+        mail to: env.FAILURE_EMAIL,
+             cc: env.FAILURE_CC,
+             subject: subject,
+             body: body
+    }
 }
