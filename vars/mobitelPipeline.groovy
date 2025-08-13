@@ -24,39 +24,42 @@ def call(Closure body) {
     // Validate required parameters
     validateConfig(config)
     
+    // Set defaults and prepare environment variables
+    def pipelineEnv = getPipelineEnvironment(config)
+    
     pipeline {
         environment {
-            // Core configuration
-            ENV = config.environment ?: 'stg'
-            PROJECT = config.project ?: 'mobitel_pipeline'
-            APP_NAME = config.appName
-            CIR = "${ENV}-docker-reg.mobitel.lk"
+            // Core configuration - all must be quoted strings
+            ENV = "${pipelineEnv.environment}"
+            PROJECT = "${pipelineEnv.project}"
+            APP_NAME = "${pipelineEnv.appName}"
+            CIR = "${pipelineEnv.environment}-docker-reg.mobitel.lk"
             CIR_USER = 'mobitel'
             CIR_PW = credentials('cir-pw')
-            KUB_NAMESPACE = config.namespace ?: 'intsys'
-            IMAGE_TAG = "${CIR}/${PROJECT}/${APP_NAME}:${ENV}.${env.BUILD_NUMBER}"
-            EXPOSE_PORT = config.exposePort ?: getDefaultPort(config.appType)
-            HARBOUR_SECRET = config.harbourSecret ?: 'harbor-intsys'
+            KUB_NAMESPACE = "${pipelineEnv.namespace}"
+            IMAGE_TAG = "${pipelineEnv.environment}-docker-reg.mobitel.lk/${pipelineEnv.project}/${pipelineEnv.appName}:${pipelineEnv.environment}.${env.BUILD_NUMBER}"
+            EXPOSE_PORT = "${pipelineEnv.exposePort}"
+            HARBOUR_SECRET = "${pipelineEnv.harbourSecret}"
             
             // Application type specific settings
-            APP_TYPE = config.appType
-            MAVEN_IMAGE = config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21'
-            CICD_TOOLS_IMAGE = config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest'
-            TRIVY_IMAGE = config.trivyImage ?: 'aquasec/trivy:latest'
+            APP_TYPE = "${pipelineEnv.appType}"
+            MAVEN_IMAGE = "${pipelineEnv.mavenImage}"
+            CICD_TOOLS_IMAGE = "${pipelineEnv.cicdToolsImage}"
+            TRIVY_IMAGE = "${pipelineEnv.trivyImage}"
             
             // Optional SonarQube settings
-            SONAR_ENABLED = config.sonarEnabled ?: false
-            SONAR_PROJECT_KEY = config.sonarProjectKey ?: "${config.appName}"
-            SONAR_PROJECT_NAME = config.sonarProjectName ?: "${config.appName}"
+            SONAR_ENABLED = "${pipelineEnv.sonarEnabled}"
+            SONAR_PROJECT_KEY = "${pipelineEnv.sonarProjectKey}"
+            SONAR_PROJECT_NAME = "${pipelineEnv.sonarProjectName}"
             
             // Email configuration
-            SUCCESS_EMAIL = config.successEmail ?: 'mobiteldev@mobitel.lk'
-            FAILURE_EMAIL = config.failureEmail ?: 'jenkins.notification@mobitel.lk'
-            FAILURE_CC = config.failureCC ?: 'mobiteldev@mobitel.lk'
+            SUCCESS_EMAIL = "${pipelineEnv.successEmail}"
+            FAILURE_EMAIL = "${pipelineEnv.failureEmail}"
+            FAILURE_CC = "${pipelineEnv.failureCC}"
             
             // Resource limits
-            MEMORY_LIMIT = config.memoryLimit ?: '512Mi'
-            CPU_LIMIT = config.cpuLimit ?: null
+            MEMORY_LIMIT = "${pipelineEnv.memoryLimit}"
+            CPU_LIMIT = "${pipelineEnv.cpuLimit}"
         }
         
         agent none
@@ -154,6 +157,30 @@ def call(Closure body) {
             }
         }
     }
+}
+
+// Function to prepare environment configuration with defaults
+def getPipelineEnvironment(config) {
+    return [
+        environment: config.environment ?: 'stg',
+        project: config.project ?: 'mobitel_pipeline',
+        appName: config.appName,
+        namespace: config.namespace ?: 'intsys',
+        exposePort: config.exposePort ?: getDefaultPort(config.appType),
+        harbourSecret: config.harbourSecret ?: 'harbor-intsys',
+        appType: config.appType,
+        mavenImage: config.mavenImage ?: 'maven:3.9.6-amazoncorretto-21',
+        cicdToolsImage: config.cicdToolsImage ?: 'inovadockerimages/cicdtools:latest',
+        trivyImage: config.trivyImage ?: 'aquasec/trivy:latest',
+        sonarEnabled: config.sonarEnabled ?: false,
+        sonarProjectKey: config.sonarProjectKey ?: config.appName,
+        sonarProjectName: config.sonarProjectName ?: config.appName,
+        successEmail: config.successEmail ?: 'mobiteldev@mobitel.lk',
+        failureEmail: config.failureEmail ?: 'jenkins.notification@mobitel.lk',
+        failureCC: config.failureCC ?: 'mobiteldev@mobitel.lk',
+        memoryLimit: config.memoryLimit ?: '512Mi',
+        cpuLimit: config.cpuLimit ?: 'null'
+    ]
 }
 
 // Helper function to determine default ports based on app type
@@ -300,16 +327,18 @@ def applyKubernetesPatches() {
         kubectl -n ${KUB_NAMESPACE} patch deployment ${APP_NAME} --patch '{"spec": {"template": {"spec": {"imagePullSecrets": [{"name": "'"${HARBOUR_SECRET}"'"}]}}}}'
     '''
     
-    // Set resource limits
-    def resourcePatch = '{"limits": {"memory": "' + env.MEMORY_LIMIT + '"}'
-    if (env.CPU_LIMIT) {
-        resourcePatch += ', "cpu": "' + env.CPU_LIMIT + '"'
+    // Set resource limits - handle CPU limit conditionally
+    script {
+        def resourcePatch = '{"limits": {"memory": "' + env.MEMORY_LIMIT + '"'
+        if (env.CPU_LIMIT != 'null' && env.CPU_LIMIT != null && env.CPU_LIMIT != '') {
+            resourcePatch += ', "cpu": "' + env.CPU_LIMIT + '"'
+        }
+        resourcePatch += '}}'
+        
+        sh """
+            kubectl -n \${KUB_NAMESPACE} patch deployment \${APP_NAME} --type='json' -p='[{"op": "add","path": "/spec/template/spec/containers/0/resources","value": ${resourcePatch}}]'
+        """
     }
-    resourcePatch += '}'
-    
-    sh """
-        kubectl -n \${KUB_NAMESPACE} patch deployment \${APP_NAME} --type='json' -p='[{"op": "add","path": "/spec/template/spec/containers/0/resources","value": ${resourcePatch}}]'
-    """
 }
 
 def extractGitInformation() {
