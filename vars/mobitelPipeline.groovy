@@ -37,7 +37,7 @@ def call(Closure body) {
             CIR_USER = 'natheeshshaan@gmail.com'
             CIR_PW = "Qwerty@123"
             KUB_NAMESPACE = "${pipelineEnv.namespace}"
-            IMAGE_TAG = "$natheeshan/${pipelineEnv.project}/${pipelineEnv.appName}:${pipelineEnv.environment}.${env.BUILD_NUMBER}"
+            IMAGE_TAG = "natheeshan/${pipelineEnv.project}/${pipelineEnv.appName}:${pipelineEnv.environment}.${env.BUILD_NUMBER}"
             EXPOSE_PORT = "${pipelineEnv.exposePort}"
             HARBOUR_SECRET = "${pipelineEnv.harbourSecret}"
             
@@ -175,9 +175,9 @@ def getPipelineEnvironment(config) {
         sonarEnabled: config.sonarEnabled ?: false,
         sonarProjectKey: config.sonarProjectKey ?: config.appName,
         sonarProjectName: config.sonarProjectName ?: config.appName,
-        successEmail: config.successEmail ?: 'mobiteldev@mobitel.lk',
-        failureEmail: config.failureEmail ?: 'jenkins.notification@mobitel.lk',
-        failureCC: config.failureCC ?: 'mobiteldev@mobitel.lk',
+        successEmail: config.successEmail ?: 'natheeshshaan@gmail.com',
+        failureEmail: config.failureEmail ?: 'natheeshshaan@gmail.com',
+        failureCC: config.failureCC ?: 'natheeshshaan@gmail.com',
         memoryLimit: config.memoryLimit ?: '512Mi',
         cpuLimit: config.cpuLimit ?: 'null'
     ]
