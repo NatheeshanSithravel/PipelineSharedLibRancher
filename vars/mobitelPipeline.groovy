@@ -229,8 +229,8 @@ def runSonarAnalysis() {
     script {
         
         // SonarQube analysis
-        def scannerHome = tool 'sonarscanner'
-        withSonarQubeEnv('sonarserver') {
+        def scannerHome = tool 'sonar-scanner'
+        withSonarQubeEnv('sonar-server') {
             sh """
                 ${scannerHome}/bin/sonar-scanner \
                     -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} \
