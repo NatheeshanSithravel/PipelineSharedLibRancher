@@ -250,8 +250,7 @@ def buildApplication(appType) {
     switch(appType) {
         case 'springboot':
         case 'tomcat-war':
-            sh 'mvn clean install -DskipTests'
-            sh 'mvn test'
+            sh 'mvn clean test -Dsurefire.skipAfterFailureCount=0 -DskipTests=false -Dmaven.test.failure.ignore=true
             // Publish JUnit results
             junit 'target/surefire-reports/*.xml'
             break
