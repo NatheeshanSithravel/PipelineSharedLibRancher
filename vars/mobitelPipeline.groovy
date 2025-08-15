@@ -235,6 +235,8 @@ def runSonarAnalysis() {
                 ${scannerHome}/bin/sonar-scanner \
                     -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} \
                     -Dsonar.projectName='${env.SONAR_PROJECT_NAME}' \
+                    -Dsonar.sources=src \
+                    -Dsonar.java.binaries=target/classes \
                     -Dsonar.junit.reportPaths=target/surefire-reports \
                     -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
             """
