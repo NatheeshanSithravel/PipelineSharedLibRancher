@@ -248,9 +248,7 @@ def buildApplication(appType) {
     switch(appType) {
         case 'springboot':
         case 'tomcat-war':
-            sh "mvn -Dmaven.test.skip=true clean install -X"
-            // Run tests
-            sh 'mvn clean test jacoco:report'
+            sh 'mvn clean install'
             // Publish JUnit results
             junit 'target/surefire-reports/*.xml'
             break
