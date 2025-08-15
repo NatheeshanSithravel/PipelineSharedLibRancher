@@ -227,12 +227,26 @@ def validateConfig(Map config) {
 
 def runSonarAnalysis() {
     script {
+        // Run tests
+        sh 'mvn clean test jacoco:report'
+
+        // Publish JUnit results
+        junit 'target/surefire-reports/*.xml'
+
+        // SonarQube analysis
         def scannerHome = tool 'sonarscanner'
         withSonarQubeEnv('sonarserver') {
-            sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} -Dsonar.projectName='${env.SONAR_PROJECT_NAME}'"
+            sh """
+                ${scannerHome}/bin/sonar-scanner \
+                    -Dsonar.projectKey=${env.SONAR_PROJECT_KEY} \
+                    -Dsonar.projectName='${env.SONAR_PROJECT_NAME}' \
+                    -Dsonar.junit.reportPaths=target/surefire-reports \
+                    -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            """
         }
     }
 }
+
 
 def buildApplication(appType) {
     switch(appType) {
