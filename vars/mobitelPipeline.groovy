@@ -64,17 +64,7 @@ def call(Closure body) {
         
         agent none
         
-        stages {
-            stage('SonarQube Analysis') {
-                when {
-                    expression { env.SONAR_ENABLED == 'true' }
-                }
-                agent any
-                steps {
-                    runSonarAnalysis()
-                }
-            }
-            
+        stages {            
             stage('Build & Test') {
                 when {
                     expression { needsBuild(env.APP_TYPE) }
@@ -87,6 +77,16 @@ def call(Closure body) {
                 }
                 steps {
                     buildApplication(env.APP_TYPE)
+                }
+            }
+
+            stage('SonarQube Analysis') {
+                when {
+                    expression { env.SONAR_ENABLED == 'true' }
+                }
+                agent any
+                steps {
+                    runSonarAnalysis()
                 }
             }
             
@@ -227,12 +227,7 @@ def validateConfig(Map config) {
 
 def runSonarAnalysis() {
     script {
-        // Run tests
-        sh 'mvn clean test jacoco:report'
-
-        // Publish JUnit results
-        junit 'target/surefire-reports/*.xml'
-
+        
         // SonarQube analysis
         def scannerHome = tool 'sonarscanner'
         withSonarQubeEnv('sonarserver') {
@@ -248,11 +243,16 @@ def runSonarAnalysis() {
 }
 
 
+
 def buildApplication(appType) {
     switch(appType) {
         case 'springboot':
         case 'tomcat-war':
             sh "mvn -Dmaven.test.skip=true clean install -X"
+            // Run tests
+            sh 'mvn clean test jacoco:report'
+            // Publish JUnit results
+            junit 'target/surefire-reports/*.xml'
             break
         default:
             echo "No build step required for ${appType}"
